@@ -1,112 +1,60 @@
-import 'dotenv/config';
-import express from 'express';
-import multer from 'multer';
-import { GoogleGenAI } from '@google/genai';
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import { GoogleGenAI } from "@google/genai";
+
+dotenv.config();
 
 const app = express();
-const upload = multer();
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY});
+const PORT = 3000;
 
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
-
+app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
 
-app.post('/generate-text', async ( req, res ) => {
-    const { prompt } = req.body;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: prompt
-        })
-
-        res.status(200).json({ result: response.text })
-    } catch (e) {
-        console.log(e);
-        res.status(500).json({message: e.message})
-    }
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
-app.post('/generate-from-image', upload.single('image'), 
-async ( req,res) => {
-    const { prompt } = req.body;
-    const base64Image = req.file.buffer.toString('base64')
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { conversation } = req.body;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: [
-                { text: prompt, type: "text" },
-                { inlineData: { 
-                    data: base64Image, 
-                    mimeType: req.file.mimetype 
-                    }
-                }
-            ]
-        })
-
-        res.status(200).json({ result: response.text })
-    } catch (e) {
-        console.log(e);
-        res.status(500).json({message: e.message})
+    if (!Array.isArray(conversation)) {
+      return res.status(400).json({
+        error: "Conversation harus array",
+      });
     }
-})
-app.post('/generate-from-document', upload.single('document')
-, async (req, res) => {
-    const { prompt } = req.body;
-    const base64Document = req.file.buffer.toString('base64')
 
-    try {
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: [
-                { 
-                    text: prompt ?? "Tolong buat ringkasan dokumen berikut", 
-                    type: "text" 
-                },
-                { 
-                    inlineData: { 
-                        data: base64Document, 
-                        mimeType: req.file.mimetype 
-                    } 
-                }
-            ]
-        })
-        
-        res.status(200).json({ result: response.text })
-    } catch (e) {
-        console.log(e);
-        res.status(500).json({message: e.message})
-    }
-})
-app.post('/generate-from-audio', upload.single('audio')
-, async (req, res) => {
-    const { prompt } = req.body;
-    const base64Audio = req.file.buffer.toString('base64')
+    const messages = conversation.map((msg) => ({
+      role: msg.role,
+      parts: [{ text: msg.text }],
+    }));
 
-    try {
-        const response = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: [
-                { 
-                    text: prompt ?? "Tolong buatkan transkrip dari audio berikut", 
-                    type: "text" 
-                },
-                { 
-                    inlineData: { 
-                        data: base64Audio, 
-                        mimeType: req.file.mimetype 
-                    } 
-                }
-            ]
-        })
-        res.status(200).json({ result: response.text })
-    } catch (e) {
-        console.log(e);
-        res.status(500).json({message: e.message})
-    }
-})
-const PORT = 3000;
-app.listen(PORT, () => 
-    console.log(`Server running on port ${PORT}`)
-)
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: messages,
+      config: {
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        systemInstruction:
+          "Kamu adalah chatbot ramah dan selalu menjawab dalam Bahasa Indonesia.",
+      },
+    });
+
+    res.json({
+      result: response.text,
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      error: "Terjadi kesalahan server",
+    });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Server berjalan di http://localhost:${PORT}`);
+});
